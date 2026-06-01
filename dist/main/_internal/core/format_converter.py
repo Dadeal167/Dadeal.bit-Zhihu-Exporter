@@ -45,7 +45,7 @@ class FormatConverter:
             raw_latex = span.get('data-tex')
             if raw_latex:
                 clean_latex = fix_latex(raw_latex)
-                formatted_latex = f"\n$$\n{clean_latex}\n$$\n" if span.get('data-block') else f"${clean_latex}$"
+                formatted_latex = f"\n$$\n{clean_latex}\n$$\n" if span.get('data-block') else f" ${clean_latex}$ "
                 
                 if for_markdown:
                     placeholder = f"PLACEHOLDERMATH{uuid.uuid4().hex}"
@@ -59,7 +59,7 @@ class FormatConverter:
             raw_latex = img.get('alt')
             if raw_latex:
                 clean_latex = fix_latex(raw_latex)
-                formatted_latex = f"${clean_latex}$"
+                formatted_latex = f" ${clean_latex}$ "
                 
                 if for_markdown:
                     placeholder = f"PLACEHOLDERMATH{uuid.uuid4().hex}"
