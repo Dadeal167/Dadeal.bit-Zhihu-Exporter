@@ -72,6 +72,7 @@
                 └── img_002.png
 
 > `data/` 和 `outputs/` 目录均由程序自动创建，无需手动建立。
+> 打包安装版运行时，数据与输出统一存放在 `%LOCALAPPDATA%\DadealZhihuExporter\` 下（安装目录通常无写权限）；源码运行时仍使用项目目录内的 `data/` 与 `outputs/`。
 
 * * *
 

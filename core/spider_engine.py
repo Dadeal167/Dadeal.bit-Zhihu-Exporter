@@ -6,13 +6,18 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 
+from core.paths import get_cookie_file, get_output_dir, setup_console
+
+setup_console()
+
 class SpiderEngine:
-    def __init__(self, cookie_file="data/cookies.json"):
-        self.cookie_file = cookie_file
+    def __init__(self, cookie_file=None):
+        self.cookie_file = cookie_file or get_cookie_file()
         self.headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Referer": "https://www.zhihu.com/",
         "Connection": "keep-alive"
         }
         self.cookies_dict = self._load_and_convert_cookies()
@@ -30,7 +35,9 @@ class SpiderEngine:
         return requests_cookies
 
     def _sanitize_filename(self, filename):
-        return re.sub(r'[\\/*?:"<>|]', "", filename).strip()
+        # 与 format_converter 保持一致: 去除非法字符与结尾空格/点号
+        cleaned = re.sub(r'[\\/*?:"<>|]', "", filename).strip().rstrip(". ")
+        return cleaned or "未命名文章"
 
     # ==========================================
     # 图片本地化下载器
@@ -39,7 +46,7 @@ class SpiderEngine:
         soup = BeautifulSoup(html_content, 'html.parser')
         safe_title = self._sanitize_filename(title)
         
-        assets_dir = os.path.join("outputs", "assets", safe_title)
+        assets_dir = os.path.join(get_output_dir(), "assets", safe_title)
         
         img_headers = {
             "User-Agent": self.headers["User-Agent"],
@@ -83,9 +90,27 @@ class SpiderEngine:
                 time.sleep(0.2)
                 
             except Exception as e:
-                pass
+                print(f"⚠️ 图片下载失败，已跳过: {img_url} ({e})")
                 
         return str(soup)
+
+    def _http_get(self, url, params=None, retries=2):
+        """带重试的 GET 请求；403/429 视为被风控拦截，直接抛出明确错误"""
+        last_error = None
+        for attempt in range(retries):
+            try:
+                response = requests.get(url, headers=self.headers, cookies=self.cookies_dict,
+                                        params=params, timeout=15)
+                if response.status_code == 200:
+                    return response
+                if response.status_code in (403, 429):
+                    raise RuntimeError(f"HTTP {response.status_code}: 请求被知乎拦截 (Cookie 可能已过期或触发风控)")
+                last_error = RuntimeError(f"HTTP {response.status_code}")
+            except requests.RequestException as e:
+                last_error = e
+            if attempt < retries - 1:
+                time.sleep(1.5 * (attempt + 1))
+        raise last_error
 
     def get_column_article_urls(self, column_url):
         """通过 API 获取专栏下的所有文章链接"""
@@ -108,10 +133,7 @@ class SpiderEngine:
         while True:
             params = {"limit": limit, "offset": offset}
             try:
-                response = requests.get(api_url, headers=self.headers, cookies=self.cookies_dict, params=params, timeout=10)
-                if response.status_code != 200:
-                    break
-                    
+                response = self._http_get(api_url, params=params)
                 data = response.json()
                 items = data.get("data", [])
                 
@@ -139,8 +161,7 @@ class SpiderEngine:
 
     def fetch_and_parse(self, url):
         try:
-            response = requests.get(url, headers=self.headers, cookies=self.cookies_dict, timeout=10)
-            response.raise_for_status() 
+            response = self._http_get(url)
             
             soup = BeautifulSoup(response.text, 'html.parser')
             
@@ -172,7 +193,8 @@ class SpiderEngine:
 
             content_node = soup.select_one('.RichText')
             if not content_node:
-                return {"status": "error", "message": "无法找到文章正文内容"}
+                return {"status": "error",
+                        "message": "无法找到文章正文内容 (可能 Cookie 已过期或内容不可见)，请尝试退出登录后重新扫码"}
             
             clean_html = str(content_node)
             clean_html = self._download_and_replace_images(clean_html, title)

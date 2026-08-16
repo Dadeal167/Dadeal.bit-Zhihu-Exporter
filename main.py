@@ -1,23 +1,21 @@
 import sys
 import os
 import time
+import json
 import random
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QLineEdit, QPushButton, QCheckBox, 
                                QTextBrowser, QLabel, QProgressBar, QFileDialog,
                                QDialog, QSystemTrayIcon, QMenu)
-from PySide6.QtCore import QThread, Signal, Qt, QEvent
+from PySide6.QtCore import QThread, Signal, Qt, QEvent, QTimer
 from PySide6.QtGui import QFont, QIcon, QAction
 
 from core.auth_manager import AuthManager
 from core.spider_engine import SpiderEngine
 from core.format_converter import FormatConverter
+from core.paths import get_resource_path, get_cookie_file, get_history_file, setup_console
 
-def get_resource_path(relative_path):
-    """获取资源文件绝对路径"""
-    if hasattr(sys, '_MEIPASS'):
-        return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.join(os.path.abspath("."), relative_path)
+setup_console()
 
 class LoginThread(QThread):
     log_signal = Signal(str)
@@ -56,7 +54,7 @@ class WorkerThread(QThread):
             
             auth = AuthManager()
             if not auth.has_valid_cookies():
-                self.log_signal.emit("❌ 致命错误：缺少 cookies.json！")
+                self.log_signal.emit("❌ 致命错误：登录凭证缺失或已过期，请重新扫码登录！")
                 self.finished_signal.emit(False)
                 return
 
@@ -64,11 +62,10 @@ class WorkerThread(QThread):
             converter = FormatConverter()
             
             # 读取断点续传历史记录
-            history_file = "data/download_history.json"
+            history_file = get_history_file()
             downloaded_urls = set()
             if os.path.exists(history_file):
                 try:
-                    import json
                     with open(history_file, 'r', encoding='utf-8') as f:
                         downloaded_urls = set(json.load(f))
                     self.log_signal.emit(f"📖 成功加载本地历史记录，共包含 {len(downloaded_urls)} 条已下载文章。")
@@ -120,29 +117,31 @@ class WorkerThread(QThread):
                 self.log_signal.emit(f"🌐 目标链接: {url}")
                 
                 self.progress_signal.emit(base_progress + 5)
-                result = spider.fetch_and_parse(url)
+                try:
+                    result = spider.fetch_and_parse(url)
 
-                if result["status"] == "success":
-                    html_content = result["html_content"]
-                    title = result["title"]
-                    metadata = result.get("metadata")
-                    self.log_signal.emit(f"✅ 成功获取: 《{title}》")
-                    self.progress_signal.emit(base_progress + int(40 / total_tasks))
+                    if result["status"] == "success":
+                        html_content = result["html_content"]
+                        title = result["title"]
+                        metadata = result.get("metadata")
+                        self.log_signal.emit(f"✅ 成功获取: 《{title}》")
+                        self.progress_signal.emit(base_progress + max(1, int(40 / total_tasks)))
 
-                    if self.export_md:
-                        self.log_signal.emit("📝 生成 Markdown 中...")
-                        converter.to_markdown(html_content, title, metadata)
-                        
-                    if self.export_pdf:
-                        self.log_signal.emit("🖨️ 渲染 PDF 中...")
-                        converter.to_pdf(html_content, title)
-                        
-                    downloaded_urls.add(url)
-                    import json
-                    with open(history_file, 'w', encoding='utf-8') as f:
-                        json.dump(list(downloaded_urls), f, indent=4, ensure_ascii=False)
-                else:
-                    self.log_signal.emit(f"❌ 抓取失败，跳过此篇: {result.get('message')}")
+                        if self.export_md:
+                            self.log_signal.emit("📝 生成 Markdown 中...")
+                            converter.to_markdown(html_content, title, metadata)
+                            
+                        if self.export_pdf:
+                            self.log_signal.emit("🖨️ 渲染 PDF 中...")
+                            converter.to_pdf(html_content, title)
+                            
+                        downloaded_urls.add(url)
+                        with open(history_file, 'w', encoding='utf-8') as f:
+                            json.dump(list(downloaded_urls), f, indent=4, ensure_ascii=False)
+                    else:
+                        self.log_signal.emit(f"❌ 抓取失败，跳过此篇: {result.get('message')}")
+                except Exception as e:
+                    self.log_signal.emit(f"❌ 处理本篇时发生异常，已跳过: {e}")
 
                 self.progress_signal.emit(int((current_task_num / total_tasks) * 100))
 
@@ -199,8 +198,7 @@ class LoginDialog(QDialog):
         if success:
             self.status_label.setStyleSheet("color: green; font-weight: bold;")
             self.status_label.setText("✅ 认证成功！即将进入系统...")
-            QThread.msleep(1000)
-            self.accept() 
+            QTimer.singleShot(1000, self.accept)
         else:
             self.login_btn.setEnabled(True)
             self.login_btn.setText("📱 重新唤起浏览器登录")
@@ -345,7 +343,7 @@ class MainWindow(QMainWindow):
             self.progress_bar.setValue(0)
 
     def clear_history(self):
-        history_file = "data/download_history.json"
+        history_file = get_history_file()
         self.clear_history_btn.setEnabled(False)
         
         if os.path.exists(history_file):
@@ -361,7 +359,7 @@ class MainWindow(QMainWindow):
 
     def logout(self):
         """销毁本地 Cookie 凭证"""
-        cookie_file = "data/cookies.json"
+        cookie_file = get_cookie_file()
         
         self.logout_btn.setEnabled(False)
         

@@ -1,17 +1,25 @@
 import os
 import re
 import uuid
+from pathlib import Path
+
 import html2text
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
+from core.paths import get_output_dir, setup_console
+
+setup_console()
+
 class FormatConverter:
-    def __init__(self, output_dir="outputs"):
-        self.output_dir = output_dir
+    def __init__(self, output_dir=None):
+        self.output_dir = output_dir or get_output_dir()
         os.makedirs(self.output_dir, exist_ok=True)
 
     def _sanitize_filename(self, filename):
-        return re.sub(r'[\\/*?:"<>|]', "", filename).strip()
+        # 移除 Windows 非法字符，并去掉结尾的空格/点号（否则会导致文件名无效）
+        cleaned = re.sub(r'[\\/*?:"<>|]', "", filename).strip().rstrip(". ")
+        return cleaned or "未命名文章"
 
     # ==========================================
     # 提取并清理数学公式
@@ -153,26 +161,42 @@ class FormatConverter:
         
         safe_title = self._sanitize_filename(title)
         filepath = os.path.join(self.output_dir, f"{safe_title}.pdf")
-        
-        with sync_playwright() as p:
-            browser = p.chromium.launch(channel="msedge", headless=True)
-            page = browser.new_page()
-            
+
+        # 关键修复: 把完整 HTML 写入 outputs 目录下的临时文件, 再用 file:// 打开该文件。
+        # 若用 page.set_content() 注入, 页面源是 about:blank, 浏览器会拦截所有本地
+        # 图片(相对路径和 file:// 绝对路径都加载不出来), 导致 PDF 里没有文章图片。
+        # 文档本身是 file:// 页面时, 相对路径 assets/... 才能正常解析并嵌入 PDF。
+        temp_html = os.path.join(self.output_dir, f"._render_{uuid.uuid4().hex}.html")
+        try:
+            with open(temp_html, "w", encoding="utf-8") as f:
+                f.write(full_html)
+
+            with sync_playwright() as p:
+                browser = p.chromium.launch(channel="msedge", headless=True)
+                try:
+                    page = browser.new_page()
+
+                    try:
+                        page.goto(Path(temp_html).as_uri(), wait_until="domcontentloaded", timeout=60000)
+                        page.wait_for_load_state("networkidle", timeout=15000)
+                    except Exception as e:
+                        print(f"⚠️ [警告] 部分外部资源加载超时，已强制跳过...")
+
+                    page.wait_for_timeout(3000)
+
+                    page.pdf(
+                        path=filepath, 
+                        format="A4", 
+                        margin={"top": "20px", "bottom": "20px", "left": "20px", "right": "20px"},
+                        print_background=True
+                    )
+                finally:
+                    browser.close()
+        finally:
             try:
-                page.set_content(full_html, wait_until="domcontentloaded", timeout=60000)
-                page.wait_for_load_state("networkidle", timeout=15000)
-            except Exception as e:
-                print(f"⚠️ [警告] 部分外部资源加载超时，已强制跳过...")
-                
-            page.wait_for_timeout(3000)
-            
-            page.pdf(
-                path=filepath, 
-                format="A4", 
-                margin={"top": "20px", "bottom": "20px", "left": "20px", "right": "20px"},
-                print_background=True
-            )
-            browser.close()
-            
+                os.remove(temp_html)
+            except OSError:
+                pass
+
         print(f"📕 PDF 已保存至: {filepath}")
         return filepath
