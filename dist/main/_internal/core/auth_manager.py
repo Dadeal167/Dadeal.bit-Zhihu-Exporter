@@ -4,7 +4,8 @@ import os
 import time
 from playwright.sync_api import sync_playwright
 
-from core.paths import get_cookie_file, setup_console
+from core.crypto_dpapi import protect, unprotect
+from core.paths import get_cookie_file, get_legacy_cookie_file, setup_console
 
 setup_console()
 
@@ -16,14 +17,61 @@ class AuthManager:
     def __init__(self, cookie_file=None):
         self.cookie_file = cookie_file or get_cookie_file()
 
-    def _load_cookies(self):
-        """读取本地 Cookie，文件不存在或损坏时返回 None"""
+    def _read_encrypted(self):
+        """读取 DPAPI 加密凭证; 失败返回 None"""
         try:
-            with open(self.cookie_file, "r", encoding="utf-8") as f:
+            with open(self.cookie_file, "rb") as f:
+                raw = f.read()
+            data = unprotect(raw)
+            cookies = json.loads(data.decode("utf-8"))
+            return cookies if isinstance(cookies, list) else None
+        except Exception:
+            return None
+
+    def _read_legacy_plain(self, path):
+        """读取旧版明文 JSON(用于兼容迁移)"""
+        try:
+            with open(path, "r", encoding="utf-8") as f:
                 cookies = json.load(f)
             return cookies if isinstance(cookies, list) else None
-        except (OSError, ValueError):
+        except Exception:
             return None
+
+    def _load_cookies(self):
+        """读取本地 Cookie: 优先加密文件, 兼容旧版明文并自动迁移为加密"""
+        cookies = self._read_encrypted()
+        if cookies is not None:
+            return cookies
+
+        legacy_paths = [get_legacy_cookie_file()]
+        if self.cookie_file.endswith(".json"):
+            legacy_paths.append(self.cookie_file)
+        for legacy in legacy_paths:
+            if not legacy or not os.path.isfile(legacy):
+                continue
+            if legacy == self.cookie_file and not legacy.endswith(".json"):
+                continue
+            cookies = self._read_legacy_plain(legacy)
+            if cookies is not None:
+                try:
+                    if legacy == self.cookie_file:
+                        # 自定义明文路径 → 迁移到同目录 .dat
+                        self.cookie_file = os.path.splitext(legacy)[0] + ".dat"
+                    self.save_cookies(cookies)   # 迁移为加密存储
+                    if os.path.abspath(legacy) != os.path.abspath(self.cookie_file):
+                        os.remove(legacy)        # 删除明文, 防止凭证泄露
+                    print("🔐 已把旧版明文 Cookie 迁移为 DPAPI 加密存储。")
+                except Exception:
+                    pass
+                return cookies
+        return None
+
+    def save_cookies(self, cookies):
+        """加密保存 Cookie(仅当前 Windows 用户可解密)"""
+        os.makedirs(os.path.dirname(self.cookie_file), exist_ok=True)
+        payload = json.dumps(cookies, ensure_ascii=False).encode("utf-8")
+        with open(self.cookie_file, "wb") as f:
+            f.write(protect(payload))
 
     def has_valid_cookies(self):
         """校验本地凭证是否真实可用：存在、结构合法、包含核心凭证、未过期"""
@@ -62,12 +110,9 @@ class AuthManager:
                 print("✅ 检测到登录状态！")
                 
                 cookies = context.cookies()
-                
-                os.makedirs(os.path.dirname(self.cookie_file), exist_ok=True)
-                with open(self.cookie_file, "w", encoding="utf-8") as f:
-                    json.dump(cookies, f, ensure_ascii=False, indent=4)
+                self.save_cookies(cookies)
                     
-                print(f"📁 Cookie 已成功提取并保存至: {self.cookie_file}")
+                print(f"📁 Cookie 已加密保存至: {self.cookie_file}")
                 
             except Exception as e:
                 print(f"❌ 登录超时或发生错误: {e}")
@@ -88,4 +133,4 @@ if __name__ == "__main__":
         print("未检测到本地凭证，启动初次认证流程...")
         auth.login_and_save_cookies()
     else:
-        print("✨ 检测到已存在 cookies.json，可直接运行后续抓取。")
+        print("✨ 检测到已存在加密凭证，可直接运行后续抓取。")

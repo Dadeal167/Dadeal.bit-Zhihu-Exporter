@@ -34,7 +34,7 @@ def main():
     args = parser.parse_args()
 
     local = os.path.join(os.environ["LOCALAPPDATA"], "DadealZhihuExporter")
-    cookie_file = os.path.join(local, "data", "cookies.json")
+    cookie_file = os.path.join(local, "data", "cookies.dat")
     history_file = os.path.join(local, "data", "download_history.json")
     outputs = os.path.join(local, "outputs")
 

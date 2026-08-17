@@ -42,11 +42,29 @@ def get_output_dir():
 
 
 def get_cookie_file():
+    """DPAPI 加密凭证文件路径"""
+    return os.path.join(get_data_dir(), "cookies.dat")
+
+
+def get_legacy_cookie_file():
+    """旧版明文 Cookie 路径(仅用于兼容迁移)"""
     return os.path.join(get_data_dir(), "cookies.json")
 
 
 def get_history_file():
     return os.path.join(get_data_dir(), "download_history.json")
+
+
+def get_logs_dir():
+    path = os.path.join(get_base_dir(), "logs")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def get_log_file():
+    """按天滚动的运行日志文件路径"""
+    import datetime
+    return os.path.join(get_logs_dir(), f"运行日志_{datetime.date.today():%Y%m%d}.log")
 
 
 def get_resource_path(relative_path):

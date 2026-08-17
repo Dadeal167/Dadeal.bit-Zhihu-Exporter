@@ -1,4 +1,4 @@
-('C:\\Users\\12637\\Desktop\\github\\zhuhu_wenzhang_tiqu\\build\\main\\main.pkg',
+('C:\\Users\\12637\\Desktop\\github\\zhuhu_wenzhang_tiqu\\build\\main\\DadealbitZhihuExporter.pkg',
  {'BINARY': True,
   'DATA': True,
   'EXECUTABLE': True,
