@@ -335,15 +335,30 @@ class PDFRenderer:
     可将 PDF 阶段总耗时降低数倍。渲染失败自动重试一次。
     """
 
-    def __init__(self, render_wait_ms=3000):
+    def __init__(self, render_wait_ms=3000, playwright=None, browser=None, context=None):
         self._render_wait_ms = max(0, int(render_wait_ms))
-        self._pw = sync_playwright().start()
-        # --allow-file-access-from-files: 允许 file:// 页面加载本地脚本/资源,
-        # 否则 MathJax 无法从本地文件加载扩展, 公式渲染不出来
-        self._browser = self._pw.chromium.launch(
-            channel="msedge", headless=True,
-            args=["--allow-file-access-from-files", "--allow-file-access"])
-        self._page = self._browser.new_page()
+        if browser is not None:
+            # 复用蜘蛛引擎已打开的 Edge(避免同一个线程里再启动第二个 Playwright 实例,
+            # 否则会触发 "Sync API inside the asyncio loop" 异常导致 PDF 崩溃/程序卡死)
+            self._pw = playwright
+            self._browser = browser
+            self._context = context
+            self._owns = False
+            self._page = context.new_page()
+        else:
+            self._pw = sync_playwright().start()
+            # --allow-file-access-from-files: 允许 file:// 页面加载本地脚本/资源,
+            # 否则 MathJax 无法从本地文件加载扩展, 公式渲染不出来
+            self._browser = self._pw.chromium.launch(
+                channel="msedge", headless=True,
+                args=["--allow-file-access-from-files", "--allow-file-access"])
+            self._context = self._browser.new_context(locale="zh-CN")
+            self._page = self._context.new_page()
+            self._owns = True
+
+    def owns_browser(self):
+        """返回是否由本渲染器独占浏览器(共享模式返回 False)"""
+        return self._owns
 
     def render(self, temp_html, pdf_path, retries=2):
         for attempt in range(1, retries + 1):
@@ -367,15 +382,42 @@ class PDFRenderer:
                 print("⚠️ [警告] 数学公式渲染等待超时，PDF 中公式可能显示为原始 LaTeX...")
 
             self._page.wait_for_timeout(self._render_wait_ms)
-            self._page.pdf(
-                path=pdf_path,
-                format="A4",
-                margin={"top": "20px", "bottom": "20px", "left": "20px", "right": "20px"},
-                print_background=True
-            )
-            return
+
+            # page.pdf 本身也做重试: 失败时新建页面再试一次, 避免单个页面状态异常
+            for pdf_attempt in range(1, 3):
+                try:
+                    self._page.pdf(
+                        path=pdf_path,
+                        format="A4",
+                        margin={"top": "20px", "bottom": "20px", "left": "20px", "right": "20px"},
+                        print_background=True
+                    )
+                    return
+                except Exception as exc:
+                    if pdf_attempt == 1:
+                        print(f"⚠️ [警告] PDF 生成失败，正在重试: {exc}")
+                        try:
+                            self._page.close()
+                        except Exception:
+                            pass
+                        self._page = self._context.new_page()
+                        try:
+                            self._page.goto(Path(temp_html).as_uri(),
+                                            wait_until="domcontentloaded", timeout=60000)
+                            self._page.wait_for_timeout(self._render_wait_ms)
+                        except Exception:
+                            pass
+                    else:
+                        raise RuntimeError(f"PDF 渲染失败: {exc}") from exc
 
     def close(self):
+        if not self._owns:
+            # 共享模式: 只关闭自己打开的页面, 不动蜘蛛引擎的浏览器
+            try:
+                self._page.close()
+            except Exception:
+                pass
+            return
         try:
             self._browser.close()
         except Exception:

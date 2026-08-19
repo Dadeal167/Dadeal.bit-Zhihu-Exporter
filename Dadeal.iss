@@ -2,7 +2,7 @@
 ; 所有源路径均基于脚本所在目录解析，项目搬家后无需再改路径
 ; 版本号与 core/version.py 保持一致
 #define MyAppSourcePath SourcePath
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.1.1"
 
 [Setup]
 AppName=Dadealbit——知乎文章回答内容提取器

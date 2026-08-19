@@ -8,7 +8,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QCheckBox, QTextBrowser, QLabel, QProgressBar,
                                QFileDialog, QDialog, QSystemTrayIcon, QMenu,
                                QTabWidget, QFormLayout, QSpinBox, QDoubleSpinBox,
-                               QGroupBox, QFrame, QSizeGrip, QMessageBox)
+                               QGroupBox, QFrame, QSizeGrip, QMessageBox,
+                               QColorDialog)
 from PySide6.QtCore import (QThread, Signal, Qt, QEvent, QTimer,
                             QPropertyAnimation, QEasingCurve)
 from PySide6.QtGui import QFont, QIcon, QAction, QColor, QPixmap, QPainter, QPainterPath
@@ -257,6 +258,199 @@ QSpinBox, QDoubleSpinBox {
 """
 
 
+def build_theme_qss(bg_hex):
+    """从根上派生整套配色: 由单一背景色生成协调的完整 QSS。
+
+    背景色的色相与亮度决定文字/边框/按钮/输入框/进度条/日志面板等所有颜色:
+    浅色背景自动配深色文字, 深色背景自动配浅色文字, 主按钮/进度条跟随背景色相,
+    不再残留原蓝色主题的任何颜色。
+    """
+    bg = QColor(bg_hex)
+    if not bg.isValid():
+        return None
+    h, s, l, _ = bg.getHslF()
+    dark = l < 0.5
+
+    def c(light, sat=None):
+        sat = s if sat is None else sat
+        sat = max(0.0, min(1.0, sat))
+        light = max(0.0, min(1.0, light))
+        col = QColor()
+        col.setHslF(h, sat, light)
+        return col.name()
+
+    if dark:
+        text = c(0.88, s * 0.30)
+        text_dim = c(0.70, s * 0.22)
+        title = c(0.93, s * 0.32)
+        border = c(min(l + 0.14, 0.96), s * 0.42)
+        border_soft = c(min(l + 0.08, 0.90), s * 0.35)
+        input_bg = c(min(l + 0.08, 0.93), s * 0.45)
+        input_text = c(0.90, s * 0.25)
+        btn_bg = c(min(l + 0.07, 0.92), s * 0.40)
+        btn_text = c(0.85, s * 0.42)
+        btn_border = c(min(l + 0.12, 0.94), s * 0.38)
+        btn_hover = c(min(l + 0.13, 0.96), s * 0.42)
+        btn_pressed = c(max(l - 0.04, 0.02), s * 0.38)
+        disabled_text = c(0.50, s * 0.12)
+        disabled_border = c(min(l + 0.07, 0.85), s * 0.20)
+        disabled_bg = c(max(l - 0.02, 0.03), s * 0.18)
+        primary_from = c(0.58, max(s, 0.50))
+        primary_to = c(0.40, max(s, 0.50))
+        primary_hfrom = c(0.66, max(s, 0.50))
+        primary_hto = c(0.48, max(s, 0.50))
+        primary_pfrom = c(0.36, max(s, 0.50))
+        primary_pto = c(0.24, max(s, 0.50))
+        primary_disabled = c(min(l + 0.08, 0.80), s * 0.22)
+        progress_bg = c(min(l + 0.05, 0.88), s * 0.30)
+        log_bg = c(max(l - 0.12, 0.02), s * 0.42)
+        log_text = c(0.80, s * 0.35)
+        danger = "#E08585"
+        danger_border = "#7A4A4A"
+    else:
+        text = c(0.26, s * 0.50)
+        text_dim = c(0.45, s * 0.35)
+        title = c(0.22, s * 0.55)
+        border = c(max(l - 0.14, 0.04), s * 0.55)
+        border_soft = c(max(l - 0.08, 0.05), s * 0.45)
+        input_bg = c(min(l + 0.04, 0.99), s * 0.30)
+        input_text = c(0.15, s * 0.40)
+        btn_bg = c(min(l + 0.03, 0.99), s * 0.25)
+        btn_text = c(0.32, s * 0.60)
+        btn_border = c(max(l - 0.12, 0.05), s * 0.50)
+        btn_hover = c(min(l + 0.06, 0.99), s * 0.30)
+        btn_pressed = c(max(l - 0.05, 0.05), s * 0.30)
+        disabled_text = c(0.60, s * 0.15)
+        disabled_border = c(min(l + 0.02, 0.95), s * 0.20)
+        disabled_bg = c(min(l + 0.04, 0.98), s * 0.12)
+        primary_from = c(0.72, max(s, 0.45))
+        primary_to = c(0.58, max(s, 0.45))
+        primary_hfrom = c(0.78, max(s, 0.45))
+        primary_hto = c(0.64, max(s, 0.45))
+        primary_pfrom = c(0.55, max(s, 0.45))
+        primary_pto = c(0.44, max(s, 0.45))
+        primary_disabled = c(min(l + 0.05, 0.95), s * 0.18)
+        progress_bg = c(max(l - 0.06, 0.05), s * 0.35)
+        log_bg = c(0.15, s * 0.30)
+        log_text = c(0.72, s * 0.30)
+        danger = "#D9534F"
+        danger_border = "#F0B9B7"
+
+    return f"""
+QMainWindow, QDialog {{
+    background-color: {bg.name()};
+    font-family: "Microsoft YaHei";
+}}
+QFrame#card {{
+    background: {bg.name()};
+    border: 1px solid {border};
+    border-radius: 20px;
+}}
+QLabel {{ color: {text}; }}
+QLabel#appTitle {{ color: {title}; font-size: 15px; font-weight: bold; }}
+QPushButton#winBtn {{
+    background: transparent;
+    border: none;
+    color: {text_dim};
+    font-size: 14px;
+    border-radius: 6px;
+    padding: 0;
+}}
+QPushButton#winBtn:hover {{ background: {btn_hover}; color: {title}; }}
+QPushButton#closeBtn {{ background: transparent; border: none; color: {text_dim}; font-size: 13px; border-radius: 6px; padding: 0; }}
+QPushButton#closeBtn:hover {{ background: rgba(235, 120, 120, 0.25); color: {danger}; }}
+QLineEdit {{
+    background: {input_bg};
+    border: 1px solid {border_soft};
+    border-radius: 10px;
+    padding: 6px 8px;
+    color: {input_text};
+}}
+QLineEdit:focus {{ border: 1px solid {border}; }}
+QComboBox {{
+    background: {input_bg};
+    color: {input_text};
+    border: 1px solid {border_soft};
+    border-radius: 8px;
+    padding: 3px 8px;
+}}
+QComboBox:hover {{ border-color: {border}; }}
+QComboBox QAbstractItemView {{
+    background: {input_bg};
+    color: {input_text};
+    border: 1px solid {border_soft};
+    selection-background-color: {btn_hover};
+    selection-color: {input_text};
+}}
+QPushButton {{
+    background: {btn_bg};
+    color: {btn_text};
+    border: 1px solid {btn_border};
+    border-radius: 10px;
+    padding: 6px 14px;
+}}
+QPushButton:hover {{ background: {btn_hover}; border-color: {border}; }}
+QPushButton:pressed {{ background: {btn_pressed}; }}
+QPushButton:disabled {{ color: {disabled_text}; border-color: {disabled_border}; background: {disabled_bg}; }}
+QPushButton#primaryButton {{
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {primary_from}, stop:1 {primary_to});
+    color: #FFFFFF;
+    border: 1px solid {primary_to};
+    font-weight: bold;
+    padding: 8px 14px;
+}}
+QPushButton#primaryButton:hover {{
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {primary_hfrom}, stop:1 {primary_hto});
+}}
+QPushButton#primaryButton:pressed {{
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {primary_pfrom}, stop:1 {primary_pto});
+}}
+QPushButton#primaryButton:disabled {{ background: {primary_disabled}; color: {disabled_text}; border: 1px solid {disabled_border}; }}
+QPushButton#dangerButton {{ color: {danger}; border-color: {danger_border}; }}
+QCheckBox {{ color: {text}; spacing: 6px; }}
+QProgressBar {{
+    background: {progress_bg};
+    border: 1px solid {border_soft};
+    border-radius: 9px;
+    text-align: center;
+    color: {text};
+    font-weight: bold;
+    min-height: 14px;
+}}
+QProgressBar::chunk {{
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {primary_from}, stop:1 {primary_to});
+    border-radius: 9px;
+}}
+QTextBrowser#logConsole {{
+    background: {log_bg};
+    color: {log_text};
+    border: 1px solid {border};
+    border-radius: 12px;
+    padding: 8px;
+    font-family: Consolas;
+}}
+QTabWidget::pane {{ border: 1px solid {border_soft}; border-radius: 12px; background: {input_bg}; }}
+QTabBar::tab {{ padding: 7px 18px; color: {text_dim}; background: transparent; }}
+QTabBar::tab:selected {{ color: {title}; font-weight: bold; border-bottom: 2px solid {border}; }}
+QGroupBox {{
+    border: 1px solid {border_soft};
+    border-radius: 12px;
+    margin-top: 10px;
+    background: {btn_bg};
+    color: {title};
+    font-weight: bold;
+}}
+QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 4px; }}
+QSpinBox, QDoubleSpinBox {{
+    background: {input_bg};
+    color: {input_text};
+    border: 1px solid {border_soft};
+    border-radius: 8px;
+    padding: 3px 6px;
+}}
+"""
+
+
 class LoginThread(QThread):
     log_signal = Signal(str)
     finished_signal = Signal(bool)
@@ -335,6 +529,7 @@ class WorkerThread(QThread):
         return f"{secs}秒"
 
     def run(self):
+        spider = None
         try:
             self.log_signal.emit("🚀 初始化核心引擎...")
             
@@ -350,7 +545,10 @@ class WorkerThread(QThread):
             render_wait_ms = int(float(self.settings.get("pdf_render_wait", 3.0)) * 1000)
             fname_tpl = str(self.settings.get("filename_template", "")).strip() or None
 
-            spider = SpiderEngine(output_dir=output_dir, image_workers=image_workers)
+            spider = SpiderEngine(
+                output_dir=output_dir,
+                image_workers=image_workers,
+                status_callback=self.log_signal.emit)
             converter = FormatConverter(output_dir=output_dir)
             
             # 读取断点续传历史记录(按格式分别记录 md/pdf, 兼容旧版列表)
@@ -433,49 +631,62 @@ class WorkerThread(QThread):
                     self.log_signal.emit(f"🌐 目标链接: {url}")
                     
                     self.progress_signal.emit(base_progress + 5)
-                    try:
-                        result = spider.fetch_and_parse(url)
 
-                        if result["status"] != "success":
-                            self.log_signal.emit(f"❌ 抓取失败，跳过此篇: {result.get('message')}")
-                            stats["failed"] += 1
-                            failed_urls.append(url)
-                        else:
-                            html_content = result["html_content"]
-                            title = result["title"]
-                            metadata = result.get("metadata") or {}
-                            self.log_signal.emit(f"✅ 成功获取: 《{title}》")
-                            self.progress_signal.emit(base_progress + max(1, int(40 / total_tasks)))
+                    # 风控号首次提取常不完整(缺 PDF / 动图异常), 会话预热后第二次才完整。
+                    # 因此对每篇最多尝试两次, 首次不完整则从抓取开始整篇重试一次。
+                    new_record = dict(record)
+                    still_md, still_pdf, still_html = need_md, need_pdf, need_html
+                    last_metadata = {}
+                    last_title = ""
 
-                            new_record = dict(record)
+                    for attempt in (1, 2):
+                        if attempt > 1:
+                            self.log_signal.emit("🔁 首次提取不完整，自动重新提取一次...")
 
-                            # 本地 AI: 摘要 + 分类(Ollama 未运行时自动跳过)
-                            if self.settings.get("ai_enabled", False):
-                                from core.extras import summarize, classify, html_to_text
-                                plain_text = html_to_text(html_content)
-                                ai_model = str(self.settings.get("ai_model", "qwen2.5:7b"))
-                                ai_timeout = int(self.settings.get("ai_timeout", 120))
-                                if self.settings.get("ai_summary", True):
-                                    self.log_signal.emit("🤖 AI 生成摘要中...")
-                                    summary = summarize(plain_text, model=ai_model, timeout=ai_timeout)
-                                    if summary:
-                                        metadata["summary"] = summary
-                                    else:
-                                        self.log_signal.emit("⚠️ AI 摘要失败(请确认 Ollama 已启动)...")
-                                if self.settings.get("ai_classify", True):
-                                    self.log_signal.emit("🤖 AI 分类中...")
-                                    category = classify(plain_text, model=ai_model, timeout=ai_timeout)
-                                    if category:
-                                        metadata["category"] = category
+                        try:
+                            result = spider.fetch_and_parse(url)
+                        except Exception as e:
+                            result = {"status": "error", "message": str(e)}
 
-                            md_path = None
-                            if need_md:
-                                self.log_signal.emit("📝 生成 Markdown 中...")
-                                md_path = converter.to_markdown(html_content, title, metadata,
+                        if result.get("status") != "success":
+                            self.log_signal.emit(f"❌ 抓取失败: {result.get('message')}")
+                            if attempt == 1:
+                                continue  # 会话可能尚未建立, 再试一次
+                            break  # 两次都失败
+
+                        html_content = result["html_content"]
+                        last_title = result["title"]
+                        last_metadata = result.get("metadata") or {}
+                        self.log_signal.emit(f"✅ 成功获取: 《{last_title}》")
+                        self.progress_signal.emit(base_progress + max(1, int(40 / total_tasks)))
+
+                        # 本地 AI 只在第一次执行(避免重复调用)
+                        if attempt == 1 and self.settings.get("ai_enabled", False):
+                            from core.extras import summarize, classify, html_to_text
+                            plain_text = html_to_text(html_content)
+                            ai_model = str(self.settings.get("ai_model", "qwen2.5:7b"))
+                            ai_timeout = int(self.settings.get("ai_timeout", 120))
+                            if self.settings.get("ai_summary", True):
+                                self.log_signal.emit("🤖 AI 生成摘要中...")
+                                summary = summarize(plain_text, model=ai_model, timeout=ai_timeout)
+                                if summary:
+                                    last_metadata["summary"] = summary
+                                else:
+                                    self.log_signal.emit("⚠️ AI 摘要失败(请确认 Ollama 已启动)...")
+                            if self.settings.get("ai_classify", True):
+                                self.log_signal.emit("🤖 AI 分类中...")
+                                category = classify(plain_text, model=ai_model, timeout=ai_timeout)
+                                if category:
+                                    last_metadata["category"] = category
+
+                        if still_md:
+                            self.log_signal.emit("📝 生成 Markdown 中...")
+                            try:
+                                md_path = converter.to_markdown(html_content, last_title,
+                                                                last_metadata,
                                                                 filename_template=fname_tpl)
                                 new_record["md"] = True
                                 self.log_signal.emit("✅ Markdown 已保存。")
-
                                 # Obsidian 同步
                                 if self.settings.get("obsidian_enabled", False):
                                     vault = str(self.settings.get("obsidian_vault", "")).strip()
@@ -488,52 +699,76 @@ class WorkerThread(QThread):
                                             self.log_signal.emit("⚠️ Obsidian 同步失败。")
                                     else:
                                         self.log_signal.emit("⚠️ Obsidian 库路径无效，已跳过同步。")
+                            except Exception as e:
+                                self.log_signal.emit(f"⚠️ Markdown 生成失败: {e}")
 
-                            if need_html:
-                                self.log_signal.emit("🌐 生成 HTML 中...")
-                                converter.to_html(html_content, title, metadata,
+                        if still_html:
+                            self.log_signal.emit("🌐 生成 HTML 中...")
+                            try:
+                                converter.to_html(html_content, last_title, last_metadata,
                                                   filename_template=fname_tpl)
                                 new_record["html"] = True
                                 self.log_signal.emit("✅ HTML 已保存。")
-                                
-                            if need_pdf:
-                                self.log_signal.emit("🖨️ 渲染 PDF 中...")
+                            except Exception as e:
+                                self.log_signal.emit(f"⚠️ HTML 生成失败: {e}")
+
+                        if still_pdf:
+                            self.log_signal.emit("🖨️ 渲染 PDF 中...")
+                            try:
+                                # 关键: PDF 渲染必须与蜘蛛引擎共用同一个 Playwright 实例,
+                                # 否则同一线程里再启动第二个 Playwright 会触发
+                                # "Sync API inside the asyncio loop" 异常导致 PDF 崩溃/程序卡死。
+                                pw, browser, context = spider.get_pdf_bundle()
                                 if renderer is None:
-                                    self.log_signal.emit("🖥️ 启动共享渲染引擎(浏览器复用，大幅提速)...")
-                                    renderer = PDFRenderer(render_wait_ms=render_wait_ms)
-                                try:
-                                    converter.to_pdf(html_content, title, renderer=renderer,
-                                                     filename_template=fname_tpl)
-                                    new_record["pdf"] = True
-                                    self.log_signal.emit("✅ PDF 已保存。")
-                                except Exception as e:
-                                    # PDF 失败只标记, 不中断任务; 下次运行会自动重试
-                                    self.log_signal.emit(f"⚠️ PDF 渲染失败(下次运行将自动重试): {e}")
+                                    self.log_signal.emit("🖥️ 启动共享渲染引擎(复用浏览器，大幅提速)...")
+                                    renderer = PDFRenderer(render_wait_ms=render_wait_ms,
+                                                           playwright=pw, browser=browser, context=context)
+                                converter.to_pdf(html_content, last_title, renderer=renderer,
+                                                 filename_template=fname_tpl)
+                                new_record["pdf"] = True
+                                self.log_signal.emit("✅ PDF 已保存。")
+                            except Exception as e:
+                                self.log_signal.emit(f"⚠️ PDF 渲染失败(将自动重试): {e}")
 
-                            # 记录分类(任务结束时统一重建分类索引)
-                            if metadata.get("category"):
-                                safe_name = converter._sanitize_filename(title)
-                                if new_record.get("md"):
-                                    index_file = f"{safe_name}.md"
-                                elif new_record.get("pdf"):
-                                    index_file = f"{safe_name}.pdf"
-                                elif new_record.get("html"):
-                                    index_file = f"{safe_name}.html"
-                                else:
-                                    index_file = ""
-                                category_entries.append({
-                                    "title": title,
-                                    "category": metadata["category"],
-                                    "file": index_file,
-                                })
+                        # 重新计算仍缺失的格式
+                        still_md = self.export_md and not new_record.get("md")
+                        still_pdf = self.export_pdf and not new_record.get("pdf")
+                        still_html = self.export_html and not new_record.get("html")
+                        if not (still_md or still_pdf or still_html):
+                            break  # 全部完成
 
-                            downloaded[url] = new_record
-                            save_history(history_file, downloaded)
-                            stats["success"] += 1
-                    except Exception as e:
-                        self.log_signal.emit(f"❌ 处理本篇时发生异常，已跳过: {e}")
+                    # ---- 收尾: 记录结果 ----
+                    any_ok = new_record.get("md") or new_record.get("pdf") or new_record.get("html")
+                    if any_ok:
+                        # 记录分类(任务结束时统一重建分类索引)
+                        if last_metadata.get("category"):
+                            safe_name = converter._sanitize_filename(last_title)
+                            if new_record.get("md"):
+                                index_file = f"{safe_name}.md"
+                            elif new_record.get("pdf"):
+                                index_file = f"{safe_name}.pdf"
+                            else:
+                                index_file = f"{safe_name}.html"
+                            category_entries.append({
+                                "title": last_title,
+                                "category": last_metadata["category"],
+                                "file": index_file,
+                            })
+                        downloaded[url] = new_record
+                        save_history(history_file, downloaded)
+                        stats["success"] += 1
+                        if still_md or still_pdf or still_html:
+                            self.log_signal.emit(
+                                "💡 提示：部分格式未能生成。若该链接本可正常打开，"
+                                "可能是账号被知乎风控（如未绑定手机号）。建议绑定手机号、"
+                                "通过手机知乎 App 摇一摇反馈，或更换正常账号后再试。")
+                    else:
                         stats["failed"] += 1
                         failed_urls.append(url)
+                        self.log_signal.emit(
+                            "💡 提示：本篇未能生成任何文件。若该链接本可正常打开，"
+                            "可能是账号被知乎风控（如未绑定手机号）。建议绑定手机号、"
+                            "通过手机知乎 App 摇一摇反馈，或更换正常账号后再试。")
 
                     self.progress_signal.emit(int((current_task_num / total_tasks) * 100))
 
@@ -600,6 +835,9 @@ class WorkerThread(QThread):
         except Exception as e:
             self.log_signal.emit(f"❌ 发生系统异常: {str(e)}")
             self.finished_signal.emit(False)
+        finally:
+            if spider is not None:
+                spider.close()
 
 
 # ==========================================
@@ -700,12 +938,29 @@ class SettingsDialog(QDialog):
         g3 = QGroupBox("外观与文件")
         g3f = QFormLayout(g3)
         self.cb_dark_mode = QCheckBox("深色模式")
+        self.bg_color = ""  # 当前选择的背景色(十六进制), 空=使用主题默认
+        self.bg_preview = QLabel("默认")
+        self.bg_preview.setFixedSize(64, 22)
+        self.bg_preview.setAlignment(Qt.AlignCenter)
+        self.bg_preview.setStyleSheet(
+            "background: transparent; border: 1px solid #C9E3F5; "
+            "border-radius: 4px; color: #4A7396;")
+        self.btn_bg_color = QPushButton("选择颜色...")
+        self.btn_bg_color.clicked.connect(self._pick_bg_color)
+        self.btn_bg_reset = QPushButton("恢复默认")
+        self.btn_bg_reset.clicked.connect(self._reset_bg_color)
+        bg_row = QHBoxLayout()
+        bg_row.addWidget(self.bg_preview)
+        bg_row.addWidget(self.btn_bg_color)
+        bg_row.addWidget(self.btn_bg_reset)
+        bg_row.addStretch()
         self.le_filename_template = QLineEdit()
         self.le_filename_template.setPlaceholderText("空 = 用原标题; 支持 {title} {date} {author}")
         hint0 = QLabel("示例模板: {date}_{title}  或  {title}_{author}")
         hint0.setWordWrap(True)
         hint0.setStyleSheet("color: gray;")
         g3f.addRow("", self.cb_dark_mode)
+        g3f.addRow("背景颜色:", bg_row)
         g3f.addRow("文件名模板:", self.le_filename_template)
         g3f.addRow("", hint0)
         gv.addWidget(g3)
@@ -866,6 +1121,8 @@ class SettingsDialog(QDialog):
         self.cb_close_tray.setChecked(bool(s.get("close_to_tray", True)))
         self.cb_auto_open.setChecked(bool(s.get("auto_open_output", False)))
         self.cb_dark_mode.setChecked(bool(s.get("dark_mode", False)))
+        self.bg_color = str(s.get("bg_color", "")).strip()
+        self._update_bg_preview()
         self.le_filename_template.setText(str(s.get("filename_template", "")))
         self.cb_autostart.setChecked(bool(s.get("autostart", False)))
         self.cb_sleep.setChecked(bool(s.get("sleep_enabled", True)))
@@ -886,6 +1143,29 @@ class SettingsDialog(QDialog):
         self.cb_ai_classify.setChecked(bool(s.get("ai_classify", True)))
         self.sp_ai_timeout.setValue(int(s.get("ai_timeout", 120)))
 
+    def _pick_bg_color(self):
+        current = QColor(self.bg_color) if self.bg_color else QColor("#F7FBFF")
+        color = QColorDialog.getColor(current, self, "选择背景颜色")
+        if color.isValid():
+            self.bg_color = color.name()
+            self._update_bg_preview()
+
+    def _reset_bg_color(self):
+        self.bg_color = ""
+        self._update_bg_preview()
+
+    def _update_bg_preview(self):
+        if self.bg_color:
+            self.bg_preview.setText("")
+            self.bg_preview.setStyleSheet(
+                f"background: {self.bg_color}; border: 1px solid #C9E3F5; "
+                "border-radius: 4px;")
+        else:
+            self.bg_preview.setText("默认")
+            self.bg_preview.setStyleSheet(
+                "background: transparent; border: 1px solid #C9E3F5; "
+                "border-radius: 4px; color: #4A7396;")
+
     def save_settings(self):
         self.settings.update({
             "default_md": self.cb_default_md.isChecked(),
@@ -894,6 +1174,7 @@ class SettingsDialog(QDialog):
             "close_to_tray": self.cb_close_tray.isChecked(),
             "auto_open_output": self.cb_auto_open.isChecked(),
             "dark_mode": self.cb_dark_mode.isChecked(),
+            "bg_color": self.bg_color,
             "filename_template": self.le_filename_template.text().strip(),
             "autostart": self.cb_autostart.isChecked(),
             "sleep_enabled": self.cb_sleep.isChecked(),
@@ -971,7 +1252,7 @@ class TitleBar(QWidget):
         layout.addWidget(self.avatar_label)
 
         self.profile_name_label = QLabel("加载中...")
-        self.profile_name_label.setStyleSheet("color: #2E5E8C; font-weight: bold;")
+        self.profile_name_label.setStyleSheet("font-weight: bold;")
         layout.addWidget(self.profile_name_label)
 
         self.title_label = QLabel(title)
@@ -1057,8 +1338,60 @@ class MainWindow(QMainWindow):
         self._log_export_stats()
 
     def _apply_theme(self):
-        dark = bool(self.settings.get("dark_mode", False))
-        QApplication.instance().setStyleSheet(STYLE_QSS_DARK if dark else STYLE_QSS)
+        bg = str(self.settings.get("bg_color", "")).strip()
+        if bg:
+            qss = build_theme_qss(bg)
+            QApplication.instance().setStyleSheet(qss or STYLE_QSS)
+            self._set_custom_background(True, bg)
+            email_color = self._derive_muted_color(bg)
+        else:
+            dark = bool(self.settings.get("dark_mode", False))
+            QApplication.instance().setStyleSheet(STYLE_QSS_DARK if dark else STYLE_QSS)
+            self._set_custom_background(False, None)
+            email_color = "#8FA9C0" if dark else "#6B8FAE"
+        self._update_email_color(email_color)
+
+    @staticmethod
+    def _derive_muted_color(bg_hex):
+        """由背景色派生一个柔和的次要文字色(用于左下角邮箱等提示文字)"""
+        c = QColor(bg_hex)
+        if not c.isValid():
+            return "#6B8FAE"
+        h, s, l, _ = c.getHslF()
+        light = 0.72 if l < 0.5 else 0.42
+        sat = s * (0.30 if l < 0.5 else 0.45)
+        col = QColor()
+        col.setHslF(h, max(0.0, min(1.0, sat)), light)
+        return col.name()
+
+    def _update_email_color(self, color_hex):
+        if hasattr(self, "email_label"):
+            self.email_label.setText(
+                '<a href="mailto:dadealbit@gmail.com" '
+                f'style="color:{color_hex}; text-decoration:none;">'
+                '📧 问题反馈: dadealbit@gmail.com</a>')
+
+    def _set_custom_background(self, is_custom, bg):
+        """自定义背景时: 去掉蓝色光晕叠加、阴影改中性、主按钮光晕跟随背景色相"""
+        if is_custom:
+            if self.glow_bg is not None:
+                self.glow_bg.hide()
+            if self.card_shadow is not None:
+                self.card_shadow.setColor(QColor(0, 0, 0, 60))
+            color = QColor(bg)
+            if color.isValid() and self.start_btn_glow is not None:
+                h, s, l, _ = color.getHslF()
+                glow = QColor()
+                glow.setHslF(h, max(s, 0.45), 0.72)
+                glow.setAlphaF(0.40)
+                self.start_btn_glow.setColor(glow)
+        else:
+            if self.glow_bg is not None:
+                self.glow_bg.show()
+            if self.card_shadow is not None:
+                self.card_shadow.setColor(QColor(70, 130, 180, 70))
+            if self.start_btn_glow is not None:
+                self.start_btn_glow.setColor(QColor(120, 195, 245, 140))
 
     def apply_autostart(self):
         """按设置写入/删除开机自启注册表项"""
@@ -1170,6 +1503,7 @@ class MainWindow(QMainWindow):
         shadow.setOffset(0, 8)
         shadow.setColor(QColor(70, 130, 180, 70))
         self.card.setGraphicsEffect(shadow)
+        self.card_shadow = shadow
 
         grid = QGridLayout(self.card)
         grid.setContentsMargins(16, 8, 16, 14)
@@ -1220,10 +1554,9 @@ class MainWindow(QMainWindow):
         action_layout = QHBoxLayout()
         self.start_btn = QPushButton("🚀 开始提取")
         self.start_btn.setObjectName("primaryButton")
-        self.start_btn.setStyleSheet("color: #3772A3;")
         self.start_btn.setMinimumHeight(40)
         self.start_btn.clicked.connect(self.start_processing)
-        apply_glow(self.start_btn, QColor(120, 195, 245, 140), 22, 5)
+        self.start_btn_glow = apply_glow(self.start_btn, QColor(120, 195, 245, 140), 22, 5)
         action_layout.addWidget(self.start_btn, 3)
 
         self.stop_btn = QPushButton("🛑 停止任务")
@@ -1238,7 +1571,6 @@ class MainWindow(QMainWindow):
         lay.addWidget(self.progress_bar)
 
         self.eta_label = QLabel("")
-        self.eta_label.setStyleSheet("color: #6B8FAE;")
         lay.addWidget(self.eta_label)
 
         # 进度平滑微动画
@@ -1251,6 +1583,20 @@ class MainWindow(QMainWindow):
         self.log_console.setAcceptDrops(False)
         self.log_console.append(f"系统就绪 (v{__version__})。点击右上角 ⚙️ 设置 调整选项。")
         lay.addWidget(self.log_console, 1)
+
+        # 底部左下角: 问题反馈邮箱(点击直接唤起邮件客户端)
+        footer = QHBoxLayout()
+        footer.setContentsMargins(0, 0, 0, 0)
+        self.email_label = QLabel()
+        self.email_label.setTextFormat(Qt.RichText)
+        self.email_label.setText(
+            '<a href="mailto:dadealbit@gmail.com" '
+            'style="color:#6B8FAE; text-decoration:none;">'
+            '📧 问题反馈: dadealbit@gmail.com</a>')
+        self.email_label.setOpenExternalLinks(True)
+        footer.addWidget(self.email_label)
+        footer.addStretch()
+        lay.addLayout(footer)
 
         # 网格叠放: 光晕(底) → 内容(顶)
         grid.addWidget(self.glow_bg, 0, 0)

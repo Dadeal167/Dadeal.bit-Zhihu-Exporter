@@ -13,3 +13,5 @@ dist/
 Output/
 # 本地备份目录
 备份/
+
+logs/

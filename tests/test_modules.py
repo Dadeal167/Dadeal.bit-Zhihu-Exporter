@@ -149,7 +149,7 @@ check("日志文件按天命名", "运行日志_" in os.path.basename(paths.get_
 
 from core.version import __version__, APP_NAME
 
-check("版本号统一读取", __version__ == "1.1.0" and "Dadealbit" in APP_NAME and "知乎" in APP_NAME)
+check("版本号统一读取", __version__ == "1.1.1" and "Dadealbit" in APP_NAME and "知乎" in APP_NAME)
 
 # ================= 2. auth_manager =================
 print("\n== 2. auth_manager Cookie 校验 ==")
@@ -312,6 +312,21 @@ cookie_p = os.path.join(tmpdir, "spider_cookie.dat")
 AuthManager(cookie_file=cookie_p).save_cookies([{"name": "z_c0", "value": "abc", "expires": future}])
 eng = SpiderEngine(cookie_file=cookie_p)
 check("构造 + Cookie 转换(加密凭证)", eng.cookies_dict.get("z_c0") == "abc")
+check("requests.Session 已同步 Cookie", eng._session.cookies.get("z_c0") == "abc")
+check("知乎域名识别", eng._is_zhihu_url("https://www.zhihu.com/question/1")
+      and eng._is_zhihu_url("https://zhuanlan.zhihu.com/p/1")
+      and not eng._is_zhihu_url("https://example.com/"))
+
+
+class _TextResp:
+    def __init__(self, text):
+        self.text = text
+
+
+check("识别 200 状态码里的风控 JSON(40362)", eng._response_is_blocked(
+    _TextResp('{"error":{"message":"您当前请求存在异常，暂时限制本次访问","code":40362}}')))
+check("正常内容不误判为风控", not eng._response_is_blocked(_TextResp("<html>正常正文</html>")))
+
 check("文件名清洗(非法字符+尾点)", eng._sanitize_filename('a/b:c*?"<>|. ') == "abc")
 check("空标题兜底", eng._sanitize_filename("   ") == "未命名文章")
 
@@ -333,6 +348,44 @@ try:
 except RuntimeError as e:
     check("403 明确提示被拦截", "拦截" in str(e), f"e={e}")
 check("403 不重试(立即抛出)", time.time() - t0 < 1.0)
+
+
+class StatusResp:
+    def __init__(self, status_code):
+        self.status_code = status_code
+
+
+session_get = eng._session.get
+browser_get = eng._browser_get
+fallback_calls = []
+eng._session.get = lambda *args, **kwargs: StatusResp(403)
+eng._browser_get = lambda url, params=None: fallback_calls.append((url, params)) or StatusResp(200)
+fallback_resp = eng._http_get("https://www.zhihu.com/question/1", params={"x": 1})
+check("知乎 403 自动切换 Edge", fallback_resp.status_code == 200
+      and fallback_calls == [("https://www.zhihu.com/question/1", {"x": 1})])
+eng._session.get = session_get
+eng._browser_get = browser_get
+
+# 切换 Edge 后, 本次任务后续知乎请求直接走浏览器, 不再回头用 requests
+session_get2 = eng._session.get
+browser_get2 = eng._browser_get
+session_calls = []
+browser_calls = []
+eng._force_browser = True
+eng._session.get = lambda *a, **k: session_calls.append((a, k)) or StatusResp(403)
+eng._browser_get = lambda url, params=None: browser_calls.append((url, params)) or StatusResp(200)
+resp = eng._http_get("https://zhuanlan.zhihu.com/p/123")
+check("切换后全程走浏览器(不再走 requests)", resp.status_code == 200
+      and session_calls == [] and browser_calls == [("https://zhuanlan.zhihu.com/p/123", None)])
+eng._force_browser = False
+eng._session.get = session_get2
+eng._browser_get = browser_get2
+
+filtered_cookie = eng._playwright_cookie({
+    "name": "z_c0", "value": "x", "domain": ".zhihu.com", "path": "/",
+    "expires": -1, "sameSite": "Invalid", "extra": "drop"})
+check("浏览器 Cookie 清洗", "expires" not in filtered_cookie
+      and "sameSite" not in filtered_cookie and "extra" not in filtered_cookie)
 
 
 class FakeResp:
@@ -610,6 +663,10 @@ try:
     check("空输入被拦截并提示", "错误" in w.log_console.toPlainText())
     w.request_stop()
     check("无任务时请求停止给出提示", "没有正在运行的任务" in w.log_console.toPlainText())
+    # 若存在真实登录凭证, 主窗口会启动后台获取头像昵称的线程; 等待其结束避免收尾崩溃
+    _profile_thread = getattr(w, "_profile_thread", None)
+    if _profile_thread is not None and _profile_thread.isRunning():
+        _profile_thread.wait(10000)
     w.close()
 except Exception as e:
     check("主窗口构建", False, f"异常: {type(e).__name__}: {e}")

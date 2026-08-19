@@ -20,6 +20,7 @@ DEFAULTS = {
     "close_to_tray": True,       # 关闭窗口时最小化到托盘
     "auto_open_output": False,   # 任务完成后自动打开输出目录
     "dark_mode": False,          # 深色模式
+    "bg_color": "",              # 自定义背景色(十六进制 #RRGGBB), 空=使用主题默认
     "filename_template": "",     # 文件名模板: 支持 {title} {date} {author}, 空=原标题
     "autostart": False,          # 开机自启
     # ---- AI(本地 Ollama) ----
