@@ -12,9 +12,21 @@ from core.paths import get_output_dir, setup_console
 setup_console()
 
 class FormatConverter:
-    def __init__(self, output_dir=None):
+    def __init__(self, output_dir=None, organize_by_type=True):
         self.output_dir = output_dir or get_output_dir()
+        self.organize_by_type = bool(organize_by_type)
         os.makedirs(self.output_dir, exist_ok=True)
+
+    def _target_dir(self, kind):
+        """按类型分目录存放(organize_by_type 开启时): Markdown/ PDF/ HTML/"""
+        if not self.organize_by_type:
+            return self.output_dir
+        folder = {"md": "Markdown", "pdf": "PDF", "html": "HTML"}.get(kind)
+        if not folder:
+            return self.output_dir
+        path = os.path.join(self.output_dir, folder)
+        os.makedirs(path, exist_ok=True)
+        return path
 
     def _sanitize_filename(self, filename):
         # 移除 Windows 非法字符，并去掉结尾的空格/点号（否则会导致文件名无效）
@@ -123,7 +135,11 @@ class FormatConverter:
             md_content = f"## 目录\n\n{toc}\n\n---\n\n{md_content}"
             
         safe_title = self._build_filename(title, metadata, filename_template)
-        filepath = os.path.join(self.output_dir, f"{safe_title}.md")
+        filepath = os.path.join(self._target_dir("md"), f"{safe_title}.md")
+
+        # 分目录模式下, MD 位于 Markdown/ 子文件夹, 图片相对路径需上跳一级
+        if self.organize_by_type:
+            md_content = md_content.replace("](assets/", "](../assets/")
         
         yaml_header = ""
         if metadata:
@@ -224,7 +240,7 @@ class FormatConverter:
         """
         
         safe_title = self._build_filename(title, None, filename_template)
-        filepath = os.path.join(self.output_dir, f"{safe_title}.pdf")
+        filepath = os.path.join(self._target_dir("pdf"), f"{safe_title}.pdf")
 
         # 关键修复: 把完整 HTML 写入 outputs 目录下的临时文件, 再用 file:// 打开该文件。
         # 若用 page.set_content() 注入, 页面源是 about:blank, 浏览器会拦截所有本地
@@ -283,6 +299,12 @@ class FormatConverter:
 
         mathjax_src = self._ensure_local_mathjax(self.output_dir) or (
             "https://registry.npmmirror.com/mathjax/3.2.2/files/es5/tex-svg-full.js")
+        if self.organize_by_type and mathjax_src.startswith("_mathjax/"):
+            # HTML 位于 HTML/ 子文件夹, 共享的 _mathjax 目录在输出根目录
+            mathjax_src = "../" + mathjax_src
+        if self.organize_by_type:
+            # HTML 位于 HTML/ 子文件夹, 图片 assets 目录在输出根目录
+            clean_html = clean_html.replace('"assets/', '"../assets/')
         cdn_fallback = ("var s=document.createElement('script');"
                         "s.src='https://registry.npmmirror.com/mathjax/3.2.2/files/es5/tex-svg-full.js';"
                         "s.async=true;document.head.appendChild(s);")
@@ -320,7 +342,7 @@ blockquote {{ border-left: 4px solid #dfe2e5; padding-left: 1em; color: #6a737d;
 </html>"""
 
         safe_title = self._build_filename(title, metadata, filename_template)
-        filepath = os.path.join(self.output_dir, f"{safe_title}.html")
+        filepath = os.path.join(self._target_dir("html"), f"{safe_title}.html")
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(full_html)
 

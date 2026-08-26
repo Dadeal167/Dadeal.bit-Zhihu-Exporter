@@ -17,6 +17,7 @@ DEFAULTS = {
     "default_md": True,          # 默认勾选 Markdown
     "default_pdf": True,         # 默认勾选高清 PDF
     "default_html": True,        # 默认勾选 HTML(网页原排版保真)
+    "organize_by_type": True,    # 按类型分目录: Markdown/ PDF/ HTML/ 子文件夹
     "close_to_tray": True,       # 关闭窗口时最小化到托盘
     "auto_open_output": False,   # 任务完成后自动打开输出目录
     "dark_mode": False,          # 深色模式

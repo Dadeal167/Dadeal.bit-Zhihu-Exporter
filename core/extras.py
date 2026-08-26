@@ -73,7 +73,19 @@ def sync_to_obsidian(md_path, output_dir, vault, folder):
         vault = os.path.abspath(vault)
         dest_dir = os.path.join(vault, folder.strip() or "知乎收藏")
         os.makedirs(dest_dir, exist_ok=True)
-        shutil.copy2(md_path, os.path.join(dest_dir, os.path.basename(md_path)))
+        dest_md = os.path.join(dest_dir, os.path.basename(md_path))
+        shutil.copy2(md_path, dest_md)
+
+        # 按类型分目录模式下 MD 里是 ../assets/ 相对引用; Obsidian 中文章与 assets
+        # 同目录, 需要改回 assets/ 才能正确显示图片
+        try:
+            with open(dest_md, encoding="utf-8") as f:
+                text = f.read()
+            if "](../assets/" in text:
+                with open(dest_md, "w", encoding="utf-8") as f:
+                    f.write(text.replace("](../assets/", "](assets/"))
+        except OSError:
+            pass
 
         safe_title = os.path.splitext(os.path.basename(md_path))[0]
         src_assets = os.path.join(output_dir, "assets", safe_title)

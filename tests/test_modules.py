@@ -693,7 +693,11 @@ except Exception as e:
 # ================= 清理测试产物 =================
 print("\n== 清理测试产物 ==")
 shutil.rmtree(tmpdir, ignore_errors=True)
-for p in [os.path.join(ROOT, "outputs", "测试导出.md"),
+# v1.1.1 起默认按类型分目录: Markdown/ PDF/ HTML/ 子文件夹(根目录旧文件一并清理)
+for p in [os.path.join(ROOT, "outputs", "Markdown"),
+          os.path.join(ROOT, "outputs", "PDF"),
+          os.path.join(ROOT, "outputs", "HTML"),
+          os.path.join(ROOT, "outputs", "测试导出.md"),
           os.path.join(ROOT, "outputs", "测试导出PDF.pdf"),
           os.path.join(ROOT, "outputs", "测试导出HTML.html"),
           os.path.join(ROOT, "outputs", "2024-01-01_模板测试_作者B.md"),

@@ -549,7 +549,9 @@ class WorkerThread(QThread):
                 output_dir=output_dir,
                 image_workers=image_workers,
                 status_callback=self.log_signal.emit)
-            converter = FormatConverter(output_dir=output_dir)
+            converter = FormatConverter(
+                output_dir=output_dir,
+                organize_by_type=bool(self.settings.get("organize_by_type", True)))
             
             # 读取断点续传历史记录(按格式分别记录 md/pdf, 兼容旧版列表)
             history_file = get_history_file()
@@ -743,12 +745,16 @@ class WorkerThread(QThread):
                         # 记录分类(任务结束时统一重建分类索引)
                         if last_metadata.get("category"):
                             safe_name = converter._sanitize_filename(last_title)
+                            organize = bool(self.settings.get("organize_by_type", True))
                             if new_record.get("md"):
-                                index_file = f"{safe_name}.md"
+                                index_file = os.path.join("Markdown", f"{safe_name}.md") if organize \
+                                    else f"{safe_name}.md"
                             elif new_record.get("pdf"):
-                                index_file = f"{safe_name}.pdf"
+                                index_file = os.path.join("PDF", f"{safe_name}.pdf") if organize \
+                                    else f"{safe_name}.pdf"
                             else:
-                                index_file = f"{safe_name}.html"
+                                index_file = os.path.join("HTML", f"{safe_name}.html") if organize \
+                                    else f"{safe_name}.html"
                             category_entries.append({
                                 "title": last_title,
                                 "category": last_metadata["category"],
@@ -938,6 +944,7 @@ class SettingsDialog(QDialog):
         g3 = QGroupBox("外观与文件")
         g3f = QFormLayout(g3)
         self.cb_dark_mode = QCheckBox("深色模式")
+        self.cb_organize = QCheckBox("按类型分目录保存(Markdown/ PDF/ HTML 子文件夹)")
         self.bg_color = ""  # 当前选择的背景色(十六进制), 空=使用主题默认
         self.bg_preview = QLabel("默认")
         self.bg_preview.setFixedSize(64, 22)
@@ -960,6 +967,7 @@ class SettingsDialog(QDialog):
         hint0.setWordWrap(True)
         hint0.setStyleSheet("color: gray;")
         g3f.addRow("", self.cb_dark_mode)
+        g3f.addRow("", self.cb_organize)
         g3f.addRow("背景颜色:", bg_row)
         g3f.addRow("文件名模板:", self.le_filename_template)
         g3f.addRow("", hint0)
@@ -1121,6 +1129,7 @@ class SettingsDialog(QDialog):
         self.cb_close_tray.setChecked(bool(s.get("close_to_tray", True)))
         self.cb_auto_open.setChecked(bool(s.get("auto_open_output", False)))
         self.cb_dark_mode.setChecked(bool(s.get("dark_mode", False)))
+        self.cb_organize.setChecked(bool(s.get("organize_by_type", True)))
         self.bg_color = str(s.get("bg_color", "")).strip()
         self._update_bg_preview()
         self.le_filename_template.setText(str(s.get("filename_template", "")))
@@ -1174,6 +1183,7 @@ class SettingsDialog(QDialog):
             "close_to_tray": self.cb_close_tray.isChecked(),
             "auto_open_output": self.cb_auto_open.isChecked(),
             "dark_mode": self.cb_dark_mode.isChecked(),
+            "organize_by_type": self.cb_organize.isChecked(),
             "bg_color": self.bg_color,
             "filename_template": self.le_filename_template.text().strip(),
             "autostart": self.cb_autostart.isChecked(),
@@ -1419,12 +1429,20 @@ class MainWindow(QMainWindow):
             print(f"⚠️ 开机自启设置失败: {e}")
 
     def _log_export_stats(self):
-        """启动时统计已导出的文件数量"""
+        """启动时统计已导出的文件数量(兼容按类型分目录与平铺两种布局)"""
         try:
             out = self.settings.resolve_output_dir()
-            md = len(glob.glob(os.path.join(out, "*.md")))
-            pdf = len(glob.glob(os.path.join(out, "*.pdf")))
-            html = len(glob.glob(os.path.join(out, "*.html")))
+            organize = bool(self.settings.get("organize_by_type", True))
+
+            def _count(ext, sub):
+                total = len(glob.glob(os.path.join(out, f"*.{ext}")))
+                if organize:
+                    total += len(glob.glob(os.path.join(out, sub, f"*.{ext}")))
+                return total
+
+            md = _count("md", "Markdown")
+            pdf = _count("pdf", "PDF")
+            html = _count("html", "HTML")
             if md or pdf or html:
                 self.append_log(f"📊 已导出统计: Markdown {md} 篇 / PDF {pdf} 篇 / HTML {html} 篇")
         except Exception:
