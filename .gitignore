@@ -15,3 +15,7 @@ Output/
 ±¸·Ý/
 
 logs/
+
+store/*.zip
+
+browser_extension/
